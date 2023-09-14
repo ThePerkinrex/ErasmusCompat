@@ -1,3 +1,5 @@
 /target
-*.csv
+/destinos
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
