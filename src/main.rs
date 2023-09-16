@@ -1,18 +1,16 @@
 use std::{borrow::Cow, path::Path};
 
 use csv::{ReaderBuilder, StringRecord};
-use get_lat_lon::PlaceLocator;
 use sqlx::{query, SqlitePool};
 
-mod get_lat_lon;
 
 #[tokio::main]
 async fn main() {
     println!("Hello, world!");
     let info = Posicion {
-        pais: Some(0),
-        ciudad: Some(1),
-        universidad: Some(2),
+        // pais: Some(0),
+        // ciudad: Some(1),
+        // universidad: Some(2),
         codigo_erasmus: 3,
         nivel_estudios: Some(5),
         plazas: Some(6),
@@ -23,23 +21,20 @@ async fn main() {
     let db = SqlitePool::connect("sqlite:db.sqlite").await.unwrap();
     let mut state = State {
         pool: db,
-        place_locator: PlaceLocator::new().unwrap(),
+        // place_locator: PlaceLocator::new().unwrap(),
     };
-    load_csv(&mut state, info, "Juan", "Erasmus - Destinos Juan(1).csv")
+    load_csv(&mut state, info, "Juan", "destinos/Erasmus - Destinos Juan(1).csv")
         .await
         .unwrap();
 }
 
 struct State {
     pool: SqlitePool,
-    place_locator: PlaceLocator,
+    // place_locator: PlaceLocator,
 }
 
 #[derive(Debug)]
 struct Posicion {
-    pais: Option<usize>,
-    ciudad: Option<usize>,
-    universidad: Option<usize>,
     codigo_erasmus: usize,
     nivel_estudios: Option<usize>,
     plazas: Option<usize>,
@@ -51,13 +46,13 @@ struct Posicion {
 #[derive(Debug)]
 struct CodigoErasmus<'a> {
     pais: Cow<'a, str>,
-    ciudad: Cow<'a, str>,
+    region: Cow<'a, str>,
     universidad: u32,
 }
 
 impl std::fmt::Display for CodigoErasmus<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}{:02}", self.pais, self.ciudad, self.universidad)
+        write!(f, "{} {}{:02}", self.pais, self.region, self.universidad)
     }
 }
 
@@ -75,7 +70,7 @@ impl<'a> TryFrom<&'a str> for CodigoErasmus<'a> {
         let uni = ciu_uni[i..].trim().parse().map_err(|_| ())?;
         Ok(Self {
             pais: pais.into(),
-            ciudad: ciudad.into(),
+            region: ciudad.into(),
             universidad: uni,
         })
     }
@@ -91,57 +86,61 @@ async fn load_csv<P: AsRef<Path> + Send>(
         .double_quote(true)
         .has_headers(true)
         .from_path(path)?;
+    
+    add_persona(state, usuario).await.unwrap();
     for record in reader.records() {
         let record = record?;
         let codigo_erasmus = record.get(info.codigo_erasmus).unwrap();
         let codigo_erasmus = CodigoErasmus::try_from(codigo_erasmus).unwrap();
-        print!("{codigo_erasmus} ");
-        let pais = get_elem(info.pais, &record);
-        let ciudad = get_elem(info.ciudad, &record);
-        let universidad = get_elem(info.universidad, &record);
-        add_pais(state, &codigo_erasmus.pais, pais.as_deref())
-            .await
-            .unwrap();
-        add_ciudad(
-            state,
-            &codigo_erasmus.ciudad,
-            &codigo_erasmus.pais,
-            ciudad.as_deref(),
-        )
-        .await
-        .unwrap();
-        add_universidad(
-            state,
-            codigo_erasmus.universidad,
-            &codigo_erasmus.ciudad,
-            &codigo_erasmus.pais,
-            universidad.as_deref(),
-        )
-        .await
-        .unwrap();
-        add_persona(state, usuario).await.unwrap();
-        add_destino(
-            state,
-            codigo_erasmus.universidad,
-            &codigo_erasmus.ciudad,
-            &codigo_erasmus.pais,
-            usuario,
-        )
-        .await
-        .unwrap();
-        let info = InfoDestino {
-            universidad: codigo_erasmus.universidad,
-            ciudad: codigo_erasmus.ciudad,
-            pais: codigo_erasmus.pais,
-            persona: usuario.into(),
-            nivel_estudios: get_elem(info.nivel_estudios, &record),
-            plazas: get_elem(info.plazas, &record).and_then(|x| x.parse().ok()),
-            meses: get_elem(info.meses, &record).and_then(|x| x.parse().ok()),
-            idioma: get_elem(info.idioma, &record),
-            observaciones: get_elem(info.observaciones, &record),
-        };
-        add_destino_info(state, info).await.unwrap();
-        println!();
+        let n = query!("SELECT count(*) as n FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", codigo_erasmus.universidad, codigo_erasmus.pais, codigo_erasmus.region).fetch_one(&state.pool).await.unwrap().n;
+        if n!=1 {
+            println!("{codigo_erasmus} {n}");
+        }
+        // let pais = get_elem(info.pais, &record);
+        // let ciudad = get_elem(info.ciudad, &record);
+        // let universidad = get_elem(info.universidad, &record);
+        // add_pais(state, &codigo_erasmus.pais, pais.as_deref())
+        //     .await
+        //     .unwrap();
+        // add_ciudad(
+        //     state,
+        //     &codigo_erasmus.ciudad,
+        //     &codigo_erasmus.pais,
+        //     ciudad.as_deref(),
+        // )
+        // .await
+        // .unwrap();
+        // add_universidad(
+        //     state,
+        //     codigo_erasmus.universidad,
+        //     &codigo_erasmus.ciudad,
+        //     &codigo_erasmus.pais,
+        //     universidad.as_deref(),
+        // )
+        // .await
+        // .unwrap();
+        // add_destino(
+        //     state,
+        //     codigo_erasmus.universidad,
+        //     &codigo_erasmus.ciudad,
+        //     &codigo_erasmus.pais,
+        //     usuario,
+        // )
+        // .await
+        // .unwrap();
+        // let info = InfoDestino {
+        //     universidad: codigo_erasmus.universidad,
+        //     ciudad: codigo_erasmus.ciudad,
+        //     pais: codigo_erasmus.pais,
+        //     persona: usuario.into(),
+        //     nivel_estudios: get_elem(info.nivel_estudios, &record),
+        //     plazas: get_elem(info.plazas, &record).and_then(|x| x.parse().ok()),
+        //     meses: get_elem(info.meses, &record).and_then(|x| x.parse().ok()),
+        //     idioma: get_elem(info.idioma, &record),
+        //     observaciones: get_elem(info.observaciones, &record),
+        // };
+        // add_destino_info(state, info).await.unwrap();
+        // println!();
     }
     Ok(())
 }
@@ -149,110 +148,6 @@ async fn load_csv<P: AsRef<Path> + Send>(
 fn get_elem(pos: Option<usize>, record: &StringRecord) -> Option<Cow<'_, str>> {
     pos.and_then(|x| record.get(x))
         .map(|x| x.replace("\r\n", " ").replace('\n', " ").into())
-}
-
-async fn add_pais(state: &mut State, codigo: &str, nombre: Option<&str>) -> sqlx::Result<()> {
-    let n = match query!("SELECT nombre FROM Pais WHERE codigo = ?", codigo)
-        .fetch_one(&state.pool)
-        .await
-    {
-        Ok(x) => Ok(x.nombre),
-        Err(sqlx::Error::RowNotFound) => Ok(None),
-        Err(e) => Err(e),
-    }?;
-    if n.is_none() {
-        query!(
-            "INSERT INTO Pais(codigo, nombre) VALUES(?, ?)",
-            codigo,
-            nombre
-        )
-        .execute(&state.pool)
-        .await?;
-    }
-    Ok(())
-}
-
-async fn add_ciudad(
-    state: &mut State,
-    codigo: &str,
-    pais: &str,
-    nombre: Option<&str>,
-) -> sqlx::Result<()> {
-    let n = match query!(
-        "SELECT nombre FROM Ciudad WHERE codigo = ? AND pais = ?",
-        codigo,
-        pais
-    )
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(x) => Ok(x.nombre),
-        Err(sqlx::Error::RowNotFound) => Ok(None),
-        Err(e) => Err(e),
-    }?;
-    if n.is_none() {
-        let (lat, lon) = if let Some(n) = nombre {
-            state.place_locator.get_place(&format!("{n}, {pais}")).await
-        } else {
-            None
-        }
-        .map(|place| (place.lat, place.lon))
-        .unzip();
-        query!(
-            "INSERT INTO Ciudad(codigo, pais, nombre, lat, lon) VALUES(?, ?, ?, ?, ?)",
-            codigo,
-            pais,
-            nombre,
-            lat,
-            lon
-        )
-        .execute(&state.pool)
-        .await?;
-    }
-    Ok(())
-}
-
-async fn add_universidad(
-    state: &mut State,
-    numero: u32,
-    ciudad: &str,
-    pais: &str,
-    nombre: Option<&str>,
-) -> sqlx::Result<()> {
-    let n = match query!(
-        "SELECT nombre FROM Universidad WHERE numero = ? AND pais = ? AND ciudad = ?",
-        numero,
-        pais,
-        ciudad
-    )
-    .fetch_one(&state.pool)
-    .await
-    {
-        Ok(x) => Ok(x.nombre),
-        Err(sqlx::Error::RowNotFound) => Ok(None),
-        Err(e) => Err(e),
-    }?;
-    if n.is_none() {
-        let (lat, lon) = if let Some(n) = nombre {
-            state.place_locator.get_place(&format!("{n}, {pais}")).await
-        } else {
-            None
-        }
-        .map(|place| (place.lat, place.lon))
-        .unzip();
-        query!(
-            "INSERT INTO Universidad(numero, ciudad, pais, nombre, lat, lon) VALUES(?, ?, ?, ?, ?, ?)",
-            numero,
-            ciudad,
-            pais,
-            nombre,
-            lat,
-            lon
-        )
-        .execute(&state.pool)
-        .await?;
-    }
-    Ok(())
 }
 
 async fn add_persona(state: &mut State, nombre: &str) -> sqlx::Result<()> {
