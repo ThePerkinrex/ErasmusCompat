@@ -3,6 +3,10 @@ use std::{borrow::Cow, path::Path};
 use csv::{ReaderBuilder, StringRecord};
 use sqlx::{query, SqlitePool};
 
+use database::Database;
+
+mod database;
+
 
 #[tokio::main]
 async fn main() {
@@ -19,18 +23,10 @@ async fn main() {
         observaciones: Some(9),
     };
     let db = SqlitePool::connect("sqlite:db.sqlite").await.unwrap();
-    let mut state = State {
-        pool: db,
-        // place_locator: PlaceLocator::new().unwrap(),
-    };
-    load_csv(&mut state, info, "Juan", "destinos/Erasmus - Destinos Juan(1).csv")
+    let db = Database::new(db);
+    load_csv(&db, info, "Juan", "destinos/Erasmus - Destinos Juan.csv")
         .await
         .unwrap();
-}
-
-struct State {
-    pool: SqlitePool,
-    // place_locator: PlaceLocator,
 }
 
 #[derive(Debug)]
@@ -43,20 +39,20 @@ struct Posicion {
     observaciones: Option<usize>,
 }
 
-#[derive(Debug)]
-struct CodigoErasmus<'a> {
+#[derive(Debug, Clone)]
+pub struct ErasmusCode<'a> {
     pais: Cow<'a, str>,
     region: Cow<'a, str>,
     universidad: u32,
 }
 
-impl std::fmt::Display for CodigoErasmus<'_> {
+impl std::fmt::Display for ErasmusCode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {}{:02}", self.pais, self.region, self.universidad)
     }
 }
 
-impl<'a> TryFrom<&'a str> for CodigoErasmus<'a> {
+impl<'a> TryFrom<&'a str> for ErasmusCode<'a> {
     type Error = ();
 
     fn try_from(value: &'a str) -> Result<Self, Self::Error> {
@@ -77,7 +73,7 @@ impl<'a> TryFrom<&'a str> for CodigoErasmus<'a> {
 }
 
 async fn load_csv<P: AsRef<Path> + Send>(
-    state: &mut State,
+    db: &Database,
     info: Posicion,
     usuario: &str,
     path: P,
@@ -87,15 +83,16 @@ async fn load_csv<P: AsRef<Path> + Send>(
         .has_headers(true)
         .from_path(path)?;
     
-    add_persona(state, usuario).await.unwrap();
-    for record in reader.records() {
+    // add_persona(state, usuario).await.unwrap();
+    for record in reader.records().skip(64) {
         let record = record?;
         let codigo_erasmus = record.get(info.codigo_erasmus).unwrap();
-        let codigo_erasmus = CodigoErasmus::try_from(codigo_erasmus).unwrap();
-        let n = query!("SELECT count(*) as n FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", codigo_erasmus.universidad, codigo_erasmus.pais, codigo_erasmus.region).fetch_one(&state.pool).await.unwrap().n;
-        if n!=1 {
-            println!("{codigo_erasmus} {n}");
-        }
+        let codigo_erasmus = ErasmusCode::try_from(codigo_erasmus).unwrap();
+        db.get_uni_city(&codigo_erasmus).await.unwrap();
+        // let n = query!("SELECT count(*) as n FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", codigo_erasmus.universidad, codigo_erasmus.pais, codigo_erasmus.region).fetch_one(&state.pool).await.unwrap().n;
+        // if n!=1 {
+        //     println!("{codigo_erasmus} {n}");
+        // }
         // let pais = get_elem(info.pais, &record);
         // let ciudad = get_elem(info.ciudad, &record);
         // let universidad = get_elem(info.universidad, &record);
@@ -150,96 +147,96 @@ fn get_elem(pos: Option<usize>, record: &StringRecord) -> Option<Cow<'_, str>> {
         .map(|x| x.replace("\r\n", " ").replace('\n', " ").into())
 }
 
-async fn add_persona(state: &mut State, nombre: &str) -> sqlx::Result<()> {
-    let n = query!(
-        "SELECT count(*) as n FROM Persona WHERE persona = ?",
-        nombre
-    )
-    .fetch_one(&state.pool)
-    .await?
-    .n;
-    if n == 0 {
-        query!("INSERT INTO Persona(persona) VALUES(?)", nombre)
-            .execute(&state.pool)
-            .await?;
-    }
-    Ok(())
-}
+// async fn add_persona(state: &mut State, nombre: &str) -> sqlx::Result<()> {
+//     let n = query!(
+//         "SELECT count(*) as n FROM Persona WHERE persona = ?",
+//         nombre
+//     )
+//     .fetch_one(&state.pool)
+//     .await?
+//     .n;
+//     if n == 0 {
+//         query!("INSERT INTO Persona(persona) VALUES(?)", nombre)
+//             .execute(&state.pool)
+//             .await?;
+//     }
+//     Ok(())
+// }
 
-async fn add_destino(
-    state: &mut State,
-    universidad: u32,
-    ciudad: &str,
-    pais: &str,
-    persona: &str,
-) -> sqlx::Result<()> {
-    let n = query!("SELECT count(*) as n FROM Destino WHERE universidad = ? AND pais = ? AND ciudad = ? AND persona = ?", universidad, pais, ciudad, persona).fetch_one(&state.pool).await?.n;
-    if n == 0 {
-        query!(
-            "INSERT INTO Destino(universidad, ciudad, pais, persona) VALUES(?, ?, ?, ?)",
-            universidad,
-            ciudad,
-            pais,
-            persona
-        )
-        .execute(&state.pool)
-        .await?;
-    }
-    Ok(())
-}
+// async fn add_destino(
+//     state: &mut State,
+//     universidad: u32,
+//     ciudad: &str,
+//     pais: &str,
+//     persona: &str,
+// ) -> sqlx::Result<()> {
+//     let n = query!("SELECT count(*) as n FROM Destino WHERE universidad = ? AND pais = ? AND ciudad = ? AND persona = ?", universidad, pais, ciudad, persona).fetch_one(&state.pool).await?.n;
+//     if n == 0 {
+//         query!(
+//             "INSERT INTO Destino(universidad, ciudad, pais, persona) VALUES(?, ?, ?, ?)",
+//             universidad,
+//             ciudad,
+//             pais,
+//             persona
+//         )
+//         .execute(&state.pool)
+//         .await?;
+//     }
+//     Ok(())
+// }
 
-struct InfoDestino<'a> {
-    universidad: u32,
-    ciudad: Cow<'a, str>,
-    pais: Cow<'a, str>,
-    persona: Cow<'a, str>,
-    nivel_estudios: Option<Cow<'a, str>>,
-    plazas: Option<u32>,
-    meses: Option<u32>,
-    idioma: Option<Cow<'a, str>>,
-    observaciones: Option<Cow<'a, str>>,
-}
+// struct InfoDestino<'a> {
+//     universidad: u32,
+//     ciudad: Cow<'a, str>,
+//     pais: Cow<'a, str>,
+//     persona: Cow<'a, str>,
+//     nivel_estudios: Option<Cow<'a, str>>,
+//     plazas: Option<u32>,
+//     meses: Option<u32>,
+//     idioma: Option<Cow<'a, str>>,
+//     observaciones: Option<Cow<'a, str>>,
+// }
 
-async fn add_destino_info(state: &mut State, info: InfoDestino<'_>) -> sqlx::Result<()> {
-    let idx = query!("SELECT count(*) as n FROM OpcionDestino WHERE universidad = ? AND pais = ? AND ciudad = ? AND persona = ?", info.universidad, info.pais, info.ciudad, info.persona).fetch_one(&state.pool).await?.n;
+// async fn add_destino_info(state: &mut State, info: InfoDestino<'_>) -> sqlx::Result<()> {
+//     let idx = query!("SELECT count(*) as n FROM OpcionDestino WHERE universidad = ? AND pais = ? AND ciudad = ? AND persona = ?", info.universidad, info.pais, info.ciudad, info.persona).fetch_one(&state.pool).await?.n;
 
-    let exists = if idx != 0 {
-        query!(
-            "SELECT plazas,nivel_estudios,meses,idioma,observaciones FROM OpcionDestino WHERE universidad = ? AND pais = ? AND ciudad = ? AND persona = ?",
-            info.universidad,
-            info.pais,
-            info.ciudad,
-            info.persona)
-        .fetch_all(&state.pool).await?
-        .into_iter()
-        .any(|record|
-            record.nivel_estudios.as_deref() == info.nivel_estudios.as_deref()
-            && record.plazas == info.plazas.map(|x| x as i64)
-            && record.meses == info.meses.map(|x| x as i64)
-            && record.idioma.as_deref() == info.idioma.as_deref()
-            && record.observaciones.as_deref() == info.observaciones.as_deref()
-        )
-    } else {
-        false
-    };
-    // println!("Existe: {exists}");
-    if !exists {
-        // println!("opcion: {idx}");
-        query!(
-            "INSERT INTO OpcionDestino(opcion, universidad, ciudad, pais, persona, plazas, nivel_estudios, meses, idioma, observaciones) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            idx,
-            info.universidad,
-            info.ciudad,
-            info.pais,
-            info.persona,
-            info.plazas,
-            info.nivel_estudios,
-            info.meses,
-            info.idioma,
-            info.observaciones
-        )
-        .execute(&state.pool)
-        .await?;
-    }
-    Ok(())
-}
+//     let exists = if idx != 0 {
+//         query!(
+//             "SELECT plazas,nivel_estudios,meses,idioma,observaciones FROM OpcionDestino WHERE universidad = ? AND pais = ? AND ciudad = ? AND persona = ?",
+//             info.universidad,
+//             info.pais,
+//             info.ciudad,
+//             info.persona)
+//         .fetch_all(&state.pool).await?
+//         .into_iter()
+//         .any(|record|
+//             record.nivel_estudios.as_deref() == info.nivel_estudios.as_deref()
+//             && record.plazas == info.plazas.map(|x| x as i64)
+//             && record.meses == info.meses.map(|x| x as i64)
+//             && record.idioma.as_deref() == info.idioma.as_deref()
+//             && record.observaciones.as_deref() == info.observaciones.as_deref()
+//         )
+//     } else {
+//         false
+//     };
+//     // println!("Existe: {exists}");
+//     if !exists {
+//         // println!("opcion: {idx}");
+//         query!(
+//             "INSERT INTO OpcionDestino(opcion, universidad, ciudad, pais, persona, plazas, nivel_estudios, meses, idioma, observaciones) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+//             idx,
+//             info.universidad,
+//             info.ciudad,
+//             info.pais,
+//             info.persona,
+//             info.plazas,
+//             info.nivel_estudios,
+//             info.meses,
+//             info.idioma,
+//             info.observaciones
+//         )
+//         .execute(&state.pool)
+//         .await?;
+//     }
+//     Ok(())
+// }
