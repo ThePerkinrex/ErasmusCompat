@@ -2,7 +2,7 @@ use std::{borrow::Cow, fs::File, sync::Arc};
 
 use axum::{Server, Router, routing::get, body::Body, Json, extract::State};
 use config::Config;
-use database::model::University;
+use database::{model::University, DbPool};
 use reqwest::StatusCode;
 use sqlx::SqlitePool;
 
@@ -12,8 +12,8 @@ mod database;
 mod config;
 mod csv_loader;
 
-async fn get_unis(State(db): State<Arc<Database>>) -> Result<Json<Vec<University>>, (StatusCode, String)> {
-    db.get_all_universities().await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+async fn get_unis(State(db): State<Arc<DbPool>>) -> Result<Json<Vec<University>>, (StatusCode, String)> {
+    (&*db).get_all_universities().await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 #[tokio::main]
@@ -22,7 +22,7 @@ async fn main() {
     let config = serde_json::from_reader::<_, Config>(File::open(config_path).unwrap()).unwrap();
     dbg!(&config);
     let db = SqlitePool::connect("sqlite:db.sqlite").await.unwrap();
-    let db = Database::new(db);
+    let db = DbPool::new(db);
 
     let router = Router::new().route("/api/unis", get(get_unis)).with_state(Arc::new(db));
 

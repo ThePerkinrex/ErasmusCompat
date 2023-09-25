@@ -2,7 +2,7 @@ use std::{borrow::Cow, path::Path};
 
 use csv::{StringRecord, ReaderBuilder};
 
-use crate::{database::{GetUniCityError, Database}, ErasmusCode};
+use crate::{database::{GetUniCityError, Database, TransactionOps}, ErasmusCode};
 
 #[derive(Debug)]
 struct Posicion {
@@ -14,8 +14,8 @@ struct Posicion {
     observaciones: Option<usize>,
 }
 
-async fn load_csv<P: AsRef<Path> + Send>(
-    db: &Database,
+async fn load_csv<P: AsRef<Path> + Send, D: Database + Send>(
+    db: &mut D,
     info: Posicion,
     usuario: &str,
     path: P,
@@ -24,14 +24,14 @@ async fn load_csv<P: AsRef<Path> + Send>(
         .double_quote(true)
         .has_headers(true)
         .from_path(path)?;
-    
+    let mut transaction = db.begin().await.unwrap();
     // add_persona(state, usuario).await.unwrap();
     let mut errores = Vec::new();
     for record in reader.records() {
         let record = record?;
         let codigo_erasmus = record.get(info.codigo_erasmus).unwrap();
         let codigo_erasmus = ErasmusCode::try_from(codigo_erasmus).unwrap();
-        match db.get_uni_city(&codigo_erasmus).await {
+        match transaction.get_uni_city(&codigo_erasmus).await {
             Ok(x) => println!("{x:?}"),
             Err(GetUniCityError::SolvableProblem(x)) => errores.push(x),
             Err(e) => panic!("Error getting uni_city: {e:?}")
@@ -86,8 +86,14 @@ async fn load_csv<P: AsRef<Path> + Send>(
         // add_destino_info(state, info).await.unwrap();
         // println!();
     }
-    for e in errores {
-        println!("{e:?}")
+    if errores.is_empty() {
+        transaction.commit().await.unwrap();
+    }else{
+        transaction.rollback().await.unwrap();
+        
+        for e in errores {
+            println!("{e:?}")
+        }
     }
     Ok(())
 }
