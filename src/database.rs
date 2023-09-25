@@ -1,11 +1,7 @@
-use sqlx::{query, query_as, SqlitePool, Sqlite};
-use thiserror::Error;
+use sqlx::Sqlite;
 
-use crate::{ErasmusCode, database::model::{Country, UniCity, CountryId}};
-
-use self::model::{CityId, University};
-pub mod model;
 mod generic;
+pub mod model;
 
 pub type DB = Sqlite;
 

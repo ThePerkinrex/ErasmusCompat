@@ -1,12 +1,17 @@
-use std::{sync::Arc, ops::{Deref, DerefMut}};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
-use sqlx::{query, query_as, SqlitePool, Sqlite, Executor, Pool};
+use sqlx::{query, query_as, Executor, Pool, Sqlite, SqlitePool};
 use thiserror::Error;
 
-use crate::{ErasmusCode, database::model::{Country, UniCity, CountryId}};
+use crate::{
+    database::model::{Country, CountryId, UniCity},
+    ErasmusCode,
+};
 
 use super::model::{CityId, University};
-
 
 use super::DB;
 
@@ -28,25 +33,30 @@ impl From<GetUniCitySolvableProblem> for GetUniCityError {
 pub enum GetUniCitySolvableProblem {
     MultipleOptions(Vec<UniCity>),
     CountryWrong(Country),
-    UniDoesntExist {
-        city: CityId,
-		uni: u32
-    },
+    UniDoesntExist { city: CityId, uni: u32 },
 }
 
 #[async_trait::async_trait]
 pub trait Database {
-	async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError>;
-	async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>>;
+    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError>;
+    async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>>;
 
-    type TransactionDb<'a>: Database where Self: 'a;
-    type Transaction<'a>: DerefMut + Deref<Target = Self::TransactionDb<'a>> + TransactionOps where Self: 'a;
-    async fn  begin<'a>(&'a mut self) -> sqlx::Result<Self::Transaction<'a>>;
+    type TransactionDb<'a>: Database
+    where
+        Self: 'a;
+    type Transaction<'a>: DerefMut + Deref<Target = Self::TransactionDb<'a>> + TransactionOps
+    where
+        Self: 'a;
+    async fn begin<'a>(&'a mut self) -> sqlx::Result<Self::Transaction<'a>>;
 }
 
 #[async_trait::async_trait]
-impl<T> Database for T where for<'a> &'a mut T: Executor<'a, Database = DB> + sqlx::Acquire<'a, Database = DB>, T: Send  {
-	async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError> {
+impl<T> Database for T
+where
+    for<'a> &'a mut T: Executor<'a, Database = DB> + sqlx::Acquire<'a, Database = DB>,
+    T: Send,
+{
+    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError> {
         let mut res = query_as!(UniCity, "SELECT ciudad as city, nombre as uni FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", uni.universidad, uni.pais, uni.region).fetch_all(&mut *self).await?;
         match res.len() {
             0 => Err(async move {
@@ -74,22 +84,22 @@ impl<T> Database for T where for<'a> &'a mut T: Executor<'a, Database = DB> + sq
 
     type TransactionDb<'a> = <Self::Transaction<'a> as Deref>::Target where Self: 'a;
     type Transaction<'a> = sqlx::Transaction<'a, DB> where Self: 'a;
-    async fn  begin<'a>(&'a mut self) -> sqlx::Result<Self::Transaction<'a>> {
+    async fn begin<'a>(&'a mut self) -> sqlx::Result<Self::Transaction<'a>> {
         sqlx::Acquire::begin(self).await
     }
 }
 
 pub struct DbPool {
-    db: Pool<DB>
+    db: Pool<DB>,
 }
 
 #[async_trait::async_trait]
-impl Database for &DbPool{
+impl Database for &DbPool {
     async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError> {
         self.db.acquire().await?.get_uni_city(uni).await
     }
 
-	async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>> {
+    async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>> {
         self.db.acquire().await?.get_all_universities().await
     }
 
@@ -100,9 +110,10 @@ impl Database for &DbPool{
     }
 }
 
-
 impl DbPool {
-    pub const fn new(db: Pool<DB>) -> Self { Self { db } }
+    pub const fn new(db: Pool<DB>) -> Self {
+        Self { db }
+    }
 
     pub async fn begin(&self) -> sqlx::Result<sqlx::Transaction<'_, DB>> {
         self.db.begin().await
@@ -124,4 +135,3 @@ impl<'a> TransactionOps for sqlx::Transaction<'a, DB> {
         self.rollback().await
     }
 }
-

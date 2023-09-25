@@ -1,32 +1,30 @@
-use std::{borrow::Cow, fs::File, sync::Arc};
+use std::{borrow::Cow, fs::File};
 
-use axum::{Server, Router, routing::get, body::Body, Json, extract::State};
+use axum::{Router, Server};
 use config::Config;
-use database::{model::University, DbPool};
-use reqwest::StatusCode;
-use sqlx::SqlitePool;
+use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt};
 
-use crate::database::Database;
-
-mod database;
+mod api;
 mod config;
 mod csv_loader;
-
-async fn get_unis(State(db): State<Arc<DbPool>>) -> Result<Json<Vec<University>>, (StatusCode, String)> {
-    (&*db).get_all_universities().await.map(Json).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-}
+mod database;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::EnvFilter::from_env("ERASMUS_LOG"))
+        .init();
     let config_path = std::env::var("ERASMUS_CONFIG").unwrap_or_else(|_| "config.json".into());
     let config = serde_json::from_reader::<_, Config>(File::open(config_path).unwrap()).unwrap();
     dbg!(&config);
-    let db = SqlitePool::connect("sqlite:db.sqlite").await.unwrap();
-    let db = DbPool::new(db);
 
-    let router = Router::new().route("/api/unis", get(get_unis)).with_state(Arc::new(db));
+    let router = Router::new().nest("/api", api::api(&config).await.unwrap());
 
-    Server::bind(&config.addr).serve(router.into_make_service()).await.unwrap();
+    Server::bind(&config.addr)
+        .serve(router.into_make_service())
+        .await
+        .unwrap();
     // let info = Posicion {
     //     // pais: Some(0),
     //     // ciudad: Some(1),
@@ -38,7 +36,7 @@ async fn main() {
     //     idioma: Some(8),
     //     observaciones: Some(9),
     // };
-    
+
     // load_csv(&db, info, "Juan", "destinos/Erasmus - Destinos Juan.csv")
     //     .await
     //     .unwrap();

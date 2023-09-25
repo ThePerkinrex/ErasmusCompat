@@ -1,20 +1,25 @@
 use std::{borrow::Cow, path::Path};
 
-use csv::{StringRecord, ReaderBuilder};
+use csv::{ReaderBuilder, StringRecord};
 
-use crate::{database::{GetUniCityError, Database, TransactionOps}, ErasmusCode};
+use crate::{
+    database::{Database, GetUniCityError, TransactionOps},
+    ErasmusCode,
+};
 
-#[derive(Debug)]
-struct Posicion {
+#[derive(Debug, serde::Deserialize)]
+pub struct Posicion {
     codigo_erasmus: usize,
     nivel_estudios: Option<usize>,
     plazas: Option<usize>,
     meses: Option<usize>,
     idioma: Option<usize>,
     observaciones: Option<usize>,
+    #[serde(default)]
+    header: bool,
 }
 
-async fn load_csv<P: AsRef<Path> + Send, D: Database + Send>(
+pub async fn load_csv<P: AsRef<Path> + Send, D: Database + Send>(
     db: &mut D,
     info: Posicion,
     usuario: &str,
@@ -34,7 +39,7 @@ async fn load_csv<P: AsRef<Path> + Send, D: Database + Send>(
         match transaction.get_uni_city(&codigo_erasmus).await {
             Ok(x) => println!("{x:?}"),
             Err(GetUniCityError::SolvableProblem(x)) => errores.push(x),
-            Err(e) => panic!("Error getting uni_city: {e:?}")
+            Err(e) => panic!("Error getting uni_city: {e:?}"),
         };
         // let n = query!("SELECT count(*) as n FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", codigo_erasmus.universidad, codigo_erasmus.pais, codigo_erasmus.region).fetch_one(&state.pool).await.unwrap().n;
         // if n!=1 {
@@ -88,9 +93,9 @@ async fn load_csv<P: AsRef<Path> + Send, D: Database + Send>(
     }
     if errores.is_empty() {
         transaction.commit().await.unwrap();
-    }else{
+    } else {
         transaction.rollback().await.unwrap();
-        
+
         for e in errores {
             println!("{e:?}")
         }
