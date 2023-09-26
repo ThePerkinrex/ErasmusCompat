@@ -8,6 +8,7 @@ mod api;
 mod config;
 mod csv_loader;
 mod database;
+mod serialize;
 
 #[tokio::main]
 async fn main() {

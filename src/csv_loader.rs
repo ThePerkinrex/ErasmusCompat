@@ -4,7 +4,7 @@ use csv::{ReaderBuilder, StringRecord};
 use thiserror::Error;
 
 use crate::{
-    database::{Database, GetUniCityError, TransactionOps},
+    database::{Database, GetUniCityError, TransactionOps, DbPool},
     ErasmusCode,
 };
 
@@ -20,17 +20,24 @@ pub struct Posicion {
     pub header: bool,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct LocatedError<T> {
+    record_number: usize,
+    error: T
+}
+
 #[derive(Debug, Error)]
 pub enum LoadCsvError {
     // #[error(transparent)]
     // CreateReader(csv::Error),
     #[error("Record errors")]
-    RecordErrors(Vec<(usize, LoadCsvRecordError)>),
+    RecordErrors(Vec<LocatedError<LoadCsvRecordError>>),
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, serde::Serialize)]
 pub enum LoadCsvRecordError {
     #[error(transparent)]
+    #[serde(serialize_with = "crate::serialize::serialize_to_string")]
     Csv(csv::Error),
     #[error(transparent)]
     GetUniCity(GetUniCityError),
@@ -40,8 +47,8 @@ pub enum LoadCsvRecordError {
     GetErasmusCode
 }
 
-pub async fn load_csv<R: Read + Send, D: Database + Send>(
-    db: &mut D,
+pub async fn load_csv<R: Read + Send>(
+    db: &DbPool,
     info: Posicion,
     usuario: &str,
     data: R,
@@ -52,6 +59,7 @@ pub async fn load_csv<R: Read + Send, D: Database + Send>(
         .from_reader(data);//.map_err(LoadCsvError::CreateReader)?;
     let mut transaction = db.begin().await.unwrap();
     // add_persona(state, usuario).await.unwrap();
+    transaction.add_user(usuario).await.unwrap();
     let mut errores = Vec::new();
     for (i, record) in reader.records().enumerate() {
         match async {
@@ -60,13 +68,14 @@ pub async fn load_csv<R: Read + Send, D: Database + Send>(
             let codigo_erasmus = ErasmusCode::try_from(codigo_erasmus).map_err(|()| LoadCsvRecordError::ParseErasmusCode(codigo_erasmus.to_string()))?;
             match transaction.get_uni_city(&codigo_erasmus).await {
                 Ok(x) => {
-                    println!("{x:?}"); Ok(())
+                    println!("{x:?}"); 
+                    Ok(())
                 },
                 Err(e) => Err(LoadCsvRecordError::GetUniCity(e)),
             }
         }.await {
             Ok(()) => (),
-            Err(e) => errores.push((i, e))
+            Err(e) => errores.push(LocatedError { record_number: i, error: e })
         };
         
         // let n = query!("SELECT count(*) as n FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", codigo_erasmus.universidad, codigo_erasmus.pais, codigo_erasmus.region).fetch_one(&state.pool).await.unwrap().n;

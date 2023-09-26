@@ -2,8 +2,9 @@ use std::io::{BufReader, Cursor};
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::csv_loader::{Posicion, load_csv};
+use crate::csv_loader::{Posicion, load_csv, LoadCsvError};
 use crate::database::{model::University, DbPool};
+use axum::response::{Response, IntoResponse};
 use axum::{
     extract::{Query, State},
     routing::{get, put},
@@ -12,7 +13,7 @@ use axum::{
 use reqwest::StatusCode;
 use sqlx::SqlitePool;
 
-use crate::database::Database;
+use crate::database::{Database, GetUniCitySolvableProblem};
 
 use self::extractors::DestinationsData;
 
@@ -55,12 +56,12 @@ impl From<&DestinosParams> for Posicion {
     }
 }
 
-async fn put_destinos(State(db): State<Arc<DbPool>>, Query(params): Query<DestinosParams>, csv: DestinationsData) {
-    
+async fn put_destinos(State(db): State<Arc<DbPool>>, Query(params): Query<DestinosParams>, csv: DestinationsData) -> Result<StatusCode, Response> {
     println!("Params: {params:?}");
     println!("CSV: {csv:?}");
-    let mut db = db.as_ref();
-    let res = load_csv(&mut db, (&params).into(), &params.user, Cursor::new(csv.csv)).await;
+    dbg!(load_csv(&db, (&params).into(), &params.user, Cursor::new(csv.csv)).await).map(|_| StatusCode::OK).map_err(|e| match e {
+        LoadCsvError::RecordErrors(e) => Json(e).into_response(),
+    })
 }
 
 pub async fn api(_config: &Config) -> sqlx::Result<Router> {

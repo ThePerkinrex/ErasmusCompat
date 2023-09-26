@@ -15,9 +15,10 @@ use super::model::{CityId, University};
 
 use super::DB;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, serde::Serialize)]
 pub enum GetUniCityError {
     #[error(transparent)]
+    #[serde(serialize_with = "crate::serialize::serialize_to_string")]
     SqlxError(#[from] sqlx::Error),
     #[error("Solvable problem")]
     SolvableProblem(GetUniCitySolvableProblem),
@@ -40,6 +41,7 @@ pub enum GetUniCitySolvableProblem {
 pub trait Database {
     async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError>;
     async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>>;
+    async fn add_user(&mut self, user: &str) -> sqlx::Result<()>;
 
     type TransactionDb<'a>: Database
     where
@@ -82,6 +84,10 @@ where
         query_as!(University, "SELECT nombre as name, numero as number, region, pais as country, ciudad as city, lat, lon FROM Universidad").fetch_all(self).await
     }
 
+    async fn add_user(&mut self, user: &str) -> sqlx::Result<()> {
+        query!("INSERT INTO Persona(persona) VALUES(?)", user).execute(self).await.map(|_| ())
+    }
+
     type TransactionDb<'a> = <Self::Transaction<'a> as Deref>::Target where Self: 'a;
     type Transaction<'a> = sqlx::Transaction<'a, DB> where Self: 'a;
     async fn begin<'a>(&'a mut self) -> sqlx::Result<Self::Transaction<'a>> {
@@ -101,6 +107,10 @@ impl<'l> Database for &'l DbPool {
 
     async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>> {
         self.db.acquire().await?.get_all_universities().await
+    }
+
+    async fn add_user(&mut self, user: &str) -> sqlx::Result<()> {
+        self.db.acquire().await?.add_user(user).await
     }
 
     type TransactionDb<'a> = <Self::Transaction<'a> as Deref>::Target where Self: 'a;
