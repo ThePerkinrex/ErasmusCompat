@@ -29,7 +29,7 @@ impl From<GetUniCitySolvableProblem> for GetUniCityError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub enum GetUniCitySolvableProblem {
     MultipleOptions(Vec<UniCity>),
     CountryWrong(Country),
@@ -94,7 +94,7 @@ pub struct DbPool {
 }
 
 #[async_trait::async_trait]
-impl Database for &DbPool {
+impl<'l> Database for &'l DbPool {
     async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError> {
         self.db.acquire().await?.get_uni_city(uni).await
     }

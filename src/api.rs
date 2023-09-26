@@ -1,7 +1,8 @@
+use std::io::{BufReader, Cursor};
 use std::sync::Arc;
 
 use crate::config::Config;
-use crate::csv_loader::Posicion;
+use crate::csv_loader::{Posicion, load_csv};
 use crate::database::{model::University, DbPool};
 use axum::{
     extract::{Query, State},
@@ -39,9 +40,27 @@ struct DestinosParams {
     #[serde(default)]
     header: bool,
 }
-async fn put_destinos(Query(params): Query<DestinosParams>, csv: DestinationsData) {
+
+impl From<&DestinosParams> for Posicion {
+    fn from(value: &DestinosParams) -> Self {
+        Self {
+            codigo_erasmus: value.codigo_erasmus,
+            nivel_estudios: value.nivel_estudios,
+            plazas: value.plazas,
+            meses: value.meses,
+            idioma: value.idioma,
+            observaciones: value.observaciones,
+            header: value.header,
+        }
+    }
+}
+
+async fn put_destinos(State(db): State<Arc<DbPool>>, Query(params): Query<DestinosParams>, csv: DestinationsData) {
+    
     println!("Params: {params:?}");
     println!("CSV: {csv:?}");
+    let mut db = db.as_ref();
+    let res = load_csv(&mut db, (&params).into(), &params.user, Cursor::new(csv.csv)).await;
 }
 
 pub async fn api(_config: &Config) -> sqlx::Result<Router> {

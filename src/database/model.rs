@@ -1,10 +1,10 @@
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub struct UniCity {
     pub uni: Option<String>,
     pub city: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug,  serde::Serialize)]
 pub struct Country {
     pub erasmus_code: String,
     pub name: String,
@@ -25,7 +25,7 @@ pub struct Uni {
     pub coords: Option<(f64, f64)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct CountryId {
     code: String,
     exists: bool,
@@ -45,14 +45,15 @@ impl CountryId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct CityId {
     region: String,
     data: CityData,
     country: CountryId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
+#[serde(untagged)]
 enum CityData {
     Single { name: String },
     Multiple { names: Vec<String> },

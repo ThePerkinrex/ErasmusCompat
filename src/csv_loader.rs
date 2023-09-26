@@ -1,6 +1,7 @@
-use std::{borrow::Cow, path::Path};
+use std::{borrow::Cow, path::Path, io::Read};
 
 use csv::{ReaderBuilder, StringRecord};
+use thiserror::Error;
 
 use crate::{
     database::{Database, GetUniCityError, TransactionOps},
@@ -9,38 +10,65 @@ use crate::{
 
 #[derive(Debug, serde::Deserialize)]
 pub struct Posicion {
-    codigo_erasmus: usize,
-    nivel_estudios: Option<usize>,
-    plazas: Option<usize>,
-    meses: Option<usize>,
-    idioma: Option<usize>,
-    observaciones: Option<usize>,
+    pub codigo_erasmus: usize,
+    pub nivel_estudios: Option<usize>,
+    pub plazas: Option<usize>,
+    pub meses: Option<usize>,
+    pub idioma: Option<usize>,
+    pub observaciones: Option<usize>,
     #[serde(default)]
-    header: bool,
+    pub header: bool,
 }
 
-pub async fn load_csv<P: AsRef<Path> + Send, D: Database + Send>(
+#[derive(Debug, Error)]
+pub enum LoadCsvError {
+    // #[error(transparent)]
+    // CreateReader(csv::Error),
+    #[error("Record errors")]
+    RecordErrors(Vec<(usize, LoadCsvRecordError)>),
+}
+
+#[derive(Debug, Error)]
+pub enum LoadCsvRecordError {
+    #[error(transparent)]
+    Csv(csv::Error),
+    #[error(transparent)]
+    GetUniCity(GetUniCityError),
+    #[error("Error parsing erasmus code, {0} is invalid")]
+    ParseErasmusCode(String),
+    #[error("Error getting erasmus code")]
+    GetErasmusCode
+}
+
+pub async fn load_csv<R: Read + Send, D: Database + Send>(
     db: &mut D,
     info: Posicion,
     usuario: &str,
-    path: P,
-) -> csv::Result<()> {
+    data: R,
+) -> Result<(), LoadCsvError> {
     let mut reader = ReaderBuilder::new()
         .double_quote(true)
-        .has_headers(true)
-        .from_path(path)?;
+        .has_headers(info.header)
+        .from_reader(data);//.map_err(LoadCsvError::CreateReader)?;
     let mut transaction = db.begin().await.unwrap();
     // add_persona(state, usuario).await.unwrap();
     let mut errores = Vec::new();
-    for record in reader.records() {
-        let record = record?;
-        let codigo_erasmus = record.get(info.codigo_erasmus).unwrap();
-        let codigo_erasmus = ErasmusCode::try_from(codigo_erasmus).unwrap();
-        match transaction.get_uni_city(&codigo_erasmus).await {
-            Ok(x) => println!("{x:?}"),
-            Err(GetUniCityError::SolvableProblem(x)) => errores.push(x),
-            Err(e) => panic!("Error getting uni_city: {e:?}"),
+    for (i, record) in reader.records().enumerate() {
+        match async {
+            let record = record.map_err(LoadCsvRecordError::Csv)?;
+            let codigo_erasmus = record.get(info.codigo_erasmus).ok_or(LoadCsvRecordError::GetErasmusCode)?;
+            let codigo_erasmus = ErasmusCode::try_from(codigo_erasmus).map_err(|()| LoadCsvRecordError::ParseErasmusCode(codigo_erasmus.to_string()))?;
+            match transaction.get_uni_city(&codigo_erasmus).await {
+                Ok(x) => {
+                    println!("{x:?}"); Ok(())
+                },
+                Err(e) => Err(LoadCsvRecordError::GetUniCity(e)),
+            }
+        }.await {
+            Ok(()) => (),
+            Err(e) => errores.push((i, e))
         };
+        
         // let n = query!("SELECT count(*) as n FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", codigo_erasmus.universidad, codigo_erasmus.pais, codigo_erasmus.region).fetch_one(&state.pool).await.unwrap().n;
         // if n!=1 {
         //     println!("{codigo_erasmus} {n}");
@@ -93,14 +121,13 @@ pub async fn load_csv<P: AsRef<Path> + Send, D: Database + Send>(
     }
     if errores.is_empty() {
         transaction.commit().await.unwrap();
+        
+        Ok(())
     } else {
         transaction.rollback().await.unwrap();
 
-        for e in errores {
-            println!("{e:?}")
-        }
+        Err(LoadCsvError::RecordErrors(errores))
     }
-    Ok(())
 }
 
 fn get_elem(pos: Option<usize>, record: &StringRecord) -> Option<Cow<'_, str>> {

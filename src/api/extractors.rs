@@ -6,11 +6,58 @@ use axum::{
 };
 use reqwest::StatusCode;
 
+use crate::database::model::UniCity;
+
+#[derive(Debug, serde::Deserialize)]
+pub struct DestinationsFix {
+    pub record_number: usize,
+    #[serde(flatten)]
+    pub fix: DestinationsFixKind
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Country {
+    pub name: String,
+    pub iso_code: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct City {
+    pub name: String,
+    pub lat: f64,
+    pub long: f64
+}
+
+
+#[derive(Debug, serde::Deserialize)]
+pub struct Uni {
+    pub name: String,
+    pub lat: f64,
+    pub long: f64,
+    pub street: String,
+    pub postal_code: String,
+    pub website: String
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "kind")]
+pub enum DestinationsFixKind {
+    SelectOption(UniCity),
+    UpdateCountry {
+        name: String
+    },
+    AddUni {
+        country: Option<Country>,
+        city: Option<City>,
+        uni: Uni
+    }
+}
+
 #[derive(Debug, serde::Deserialize)]
 pub struct DestinationsData {
-    csv: String,
+    pub csv: String,
 	#[serde(default)]
-    fixes: Vec<()>,
+    pub fixes: Vec<DestinationsFix>,
 }
 
 #[axum::async_trait]
