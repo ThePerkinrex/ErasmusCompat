@@ -43,9 +43,6 @@ pub struct Uni {
 #[serde(tag = "kind")]
 pub enum DestinationsFixKind {
     SelectOption(UniCity),
-    UpdateCountry {
-        name: String
-    },
     AddUni {
         country: Option<Country>,
         city: Option<City>,
