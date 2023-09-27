@@ -1,11 +1,11 @@
-use std::{borrow::Cow, path::Path, io::Read};
+use std::{borrow::Cow, path::Path, io::Read, collections::HashMap};
 
 use csv::{ReaderBuilder, StringRecord};
 use thiserror::Error;
 
 use crate::{
     database::{Database, GetUniCityError, TransactionOps, DbPool},
-    ErasmusCode,
+    ErasmusCode, api::extractors::DestinationsFix,
 };
 
 #[derive(Debug, serde::Deserialize)]
@@ -52,6 +52,7 @@ pub async fn load_csv<R: Read + Send>(
     info: Posicion,
     usuario: &str,
     data: R,
+    fixes: Vec<DestinationsFix>
 ) -> Result<(), LoadCsvError> {
     let mut reader = ReaderBuilder::new()
         .double_quote(true)
@@ -61,12 +62,16 @@ pub async fn load_csv<R: Read + Send>(
     // add_persona(state, usuario).await.unwrap();
     transaction.add_user(usuario).await.unwrap();
     let mut errores = Vec::new();
+    let fixes: HashMap<_, _> = fixes.into_iter().map(|x| (x.record_number, x.fix)).collect();
     for (i, record) in reader.records().enumerate() {
         match async {
+            if let Some(fix) = fixes.get(&i)  {
+                println!("{fix:?}")
+            }
             let record = record.map_err(LoadCsvRecordError::Csv)?;
             let codigo_erasmus = record.get(info.codigo_erasmus).ok_or(LoadCsvRecordError::GetErasmusCode)?;
             let codigo_erasmus = ErasmusCode::try_from(codigo_erasmus).map_err(|()| LoadCsvRecordError::ParseErasmusCode(codigo_erasmus.to_string()))?;
-            match transaction.get_uni_city(&codigo_erasmus).await {
+            match transaction.get_uni_city(&codigo_erasmus, fixes.get(&i)).await {
                 Ok(x) => {
                     println!("{x:?}"); 
                     Ok(())

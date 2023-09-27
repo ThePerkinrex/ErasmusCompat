@@ -57,9 +57,9 @@ impl From<&DestinosParams> for Posicion {
 }
 
 async fn put_destinos(State(db): State<Arc<DbPool>>, Query(params): Query<DestinosParams>, csv: DestinationsData) -> Result<StatusCode, Response> {
-    println!("Params: {params:?}");
-    println!("CSV: {csv:?}");
-    dbg!(load_csv(&db, (&params).into(), &params.user, Cursor::new(csv.csv)).await).map(|_| StatusCode::OK).map_err(|e| match e {
+    // println!("Params: {params:?}");
+    // println!("CSV: {csv:?}");
+    load_csv(&db, (&params).into(), &params.user, Cursor::new(csv.csv), csv.fixes).await.map(|_| StatusCode::OK).map_err(|e| match e {
         LoadCsvError::RecordErrors(e) => Json(e).into_response(),
     })
 }

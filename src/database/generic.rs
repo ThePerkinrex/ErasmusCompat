@@ -1,6 +1,7 @@
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
+    borrow::Cow
 };
 
 use sqlx::{query, query_as, Executor, Pool, Sqlite, SqlitePool};
@@ -9,6 +10,7 @@ use thiserror::Error;
 use crate::{
     database::model::{Country, CountryId, UniCity},
     ErasmusCode,
+    api::extractors::DestinationsFixKind
 };
 
 use super::model::{CityId, University};
@@ -39,7 +41,7 @@ pub enum GetUniCitySolvableProblem {
 
 #[async_trait::async_trait]
 pub trait Database {
-    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError>;
+    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>, fix: Option<&DestinationsFixKind>) -> Result<UniCity, GetUniCityError>;
     async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>>;
     async fn add_user(&mut self, user: &str) -> sqlx::Result<()>;
 
@@ -58,8 +60,15 @@ where
     for<'a> &'a mut T: Executor<'a, Database = DB> + sqlx::Acquire<'a, Database = DB>,
     T: Send,
 {
-    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError> {
-        let mut res = query_as!(UniCity, "SELECT ciudad as city, nombre as uni FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", uni.universidad, uni.pais, uni.region).fetch_all(&mut *self).await?;
+    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>, fix: Option<&DestinationsFixKind>) -> Result<UniCity, GetUniCityError> {
+        let pais = if let Some(DestinationsFixKind::UpdateCountry { name }) = fix {
+            Cow::Borrowed(name.as_slice())
+        }else{
+            uni.pais
+        };
+        let mut res = if let Some(DestinationsFixKind::SelectOption(uni_city)) = fix {
+            query_as!(UniCity, "SELECT ciudad as city, nombre as uni FROM Universidad WHERE numero = ? AND pais = ? AND region = ? AND ciudad = ? AND nombre = ?", uni.universidad, uni.pais, uni.region, uni_city.city, uni_city.uni).fetch_all(&mut *self).await?
+        } else{ query_as!(UniCity, "SELECT ciudad as city, nombre as uni FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", uni.universidad, uni.pais, uni.region).fetch_all(&mut *self).await?};
         match res.len() {
             0 => Err(async move {
 				if let Some(country) = query_as!(Country, "SELECT p.codigo as erasmus_code, p.nombre as name, p.codigo_iso as iso_code FROM Universidad u, Pais p WHERE u.pais = p.codigo AND u.region = ? AND u.numero = ?", uni.region, uni.universidad).fetch_optional(&mut *self).await? {
@@ -101,8 +110,8 @@ pub struct DbPool {
 
 #[async_trait::async_trait]
 impl<'l> Database for &'l DbPool {
-    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>) -> Result<UniCity, GetUniCityError> {
-        self.db.acquire().await?.get_uni_city(uni).await
+    async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>, fix: Option<&DestinationsFixKind>) -> Result<UniCity, GetUniCityError> {
+        self.db.acquire().await?.get_uni_city(uni, fix).await
     }
 
     async fn get_all_universities(&mut self) -> sqlx::Result<Vec<University>> {
