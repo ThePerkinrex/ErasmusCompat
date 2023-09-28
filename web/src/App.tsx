@@ -7,6 +7,7 @@ import leaflet_icon_shadow from 'leaflet/dist/images/marker-shadow.png'
 import leaflet_icon_retina from 'leaflet/dist/images/marker-icon-2x.png'
 import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
 import { LatLngExpression, Icon } from 'leaflet';
+import AddDestinations from './AddDestinations';
 Icon.Default.mergeOptions({
   iconRetinaUrl: leaflet_icon_retina,
   iconUrl: leaflet_icon,
@@ -30,9 +31,9 @@ type State = {
 
 function App() {
   let [state, setState] = useState<State>({unis: []})
-  useEffect(() => {
-    fetch("/api/unis").then(x => x.json()).then(unis => setState(s => ({...s, unis}))).catch(e => console.error("Error fetching unis: " + e))
-  }, [])
+  // useEffect(() => {
+  //   fetch("/api/unis").then(x => x.json()).then(unis => setState(s => ({...s, unis}))).catch(e => console.error("Error fetching unis: " + e))
+  // }, [])
   return (
     <div className="App">
       {/* <header className="App-header">
@@ -59,12 +60,13 @@ function App() {
             {uni.country} {uni.region} {uni.number}: {uni.name} @ {uni.city}
           </Popup>
         </Marker>)}
-        <Marker position={position}>
+        {/* <Marker position={position}>
           <Popup>
             A pretty CSS3 popup. <br /> Easily customizable.
           </Popup>
-        </Marker>
+        </Marker> */}
       </MapContainer>
+      <AddDestinations/>
     </div>
   );
 }

@@ -61,6 +61,15 @@ where
     T: Send,
 {
     async fn get_uni_city(&mut self, uni: &ErasmusCode<'_>, fix: Option<&DestinationsFixKind>) -> Result<UniCity, GetUniCityError> {
+        if let Some(DestinationsFixKind::AddUni { country, city, uni }) = fix {
+            if let Some(country) = country {
+                println!("Add country {country:?}")
+            }
+            if let Some(city) = city {
+                println!("Add city {city:?}")
+            }
+            println!("Add uni {uni:?}");
+        }
         let mut res = if let Some(DestinationsFixKind::SelectOption(uni_city)) = fix {
             query_as!(UniCity, "SELECT ciudad as city, nombre as uni FROM Universidad WHERE numero = ? AND pais = ? AND region = ? AND ciudad = ? AND nombre = ?", uni.universidad, uni.pais, uni.region, uni_city.city, uni_city.uni).fetch_all(&mut *self).await?
         } else{ query_as!(UniCity, "SELECT ciudad as city, nombre as uni FROM Universidad WHERE numero = ? AND pais = ? AND region = ?", uni.universidad, uni.pais, uni.region).fetch_all(&mut *self).await?};
